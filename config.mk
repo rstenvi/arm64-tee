@@ -26,7 +26,7 @@ RUST_OPTS += --cfg spd="optee"
 RUST_OPTS += --cfg platform="qemu"
 RUST_OPTS += -C soft-float
 RUST_OPTS += -C panic=abort
-RUST_OPTS += -C opt-level=z
+RUST_OPTS += -C opt-level=0
 RUST_OPTS += -C debug-assertions=off
 RUST_OPTS += -C lto=no
 #RUST_OPTS += -C codegen-units=1

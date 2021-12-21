@@ -29,12 +29,13 @@ static mut FDT: u64 = 0;
 //     size_dt_struct: u32,
 // }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, Copy)]
 pub struct FdtProp {
 	size_cells: u32,
 	addr_cells: u32,
 	addr: u64,
 	size: usize,
+	status: u64
 }
 
 
@@ -44,8 +45,9 @@ pub struct FdtProp {
 * The function returns start of property data and the length of the property
 * data. If no property with the name was found, (0, 0) is returned.
 */
-fn _find_prop(header: u64, _name: &str, result: &mut FdtProp) -> i32	{
+fn _find_prop(header: u64, _name: &str, result: &mut FdtProp, iskip: i32) -> i32	{
 	let asint = header as u64;
+	let mut skip = iskip;
 
 	let off_dt_struct = memory::be::read::u32(header + 8);
 	let off_dt_strings = memory::be::read::u32(header + 12);
@@ -61,6 +63,7 @@ fn _find_prop(header: u64, _name: &str, result: &mut FdtProp) -> i32	{
 
 	result.size_cells = SIZE_CELL_DEFAULT;
 	result.addr_cells = ADDR_CELL_DEFAULT;
+	result.status = 0;
 
 	let lensize = "#size-cells".len();
 	let addrsize = "#address-cells".len();
@@ -70,15 +73,15 @@ fn _find_prop(header: u64, _name: &str, result: &mut FdtProp) -> i32	{
 		curr += 4;
 		match node {
 			FDT_BEGIN_NODE => {
-				//log::info("FDT begin node\n");
 				// Node name follows directly after identifier
-				//log::from_memory(curr);
+// 				log::info("FDT begin node");
+// 				log::from_memory(curr);
 				let nodelen = memory::cstring::strlen(curr as *const u8);
 				let mcount = memory::cstring::bytesequals(curr as *const u8, name, matchcount as usize);
 
 				// Given string should always be separated by '/'
-				let hitb = name[matchcount+mcount];
-				if hitb == b'/' {
+// 				let hitb = name[matchcount+mcount];
+				if matchcount+mcount >= name.len() || name[matchcount+mcount] == b'/' {
 					// Whole property is matched
 					if mcount == nodelen {
 						innode = true;
@@ -87,8 +90,18 @@ fn _find_prop(header: u64, _name: &str, result: &mut FdtProp) -> i32	{
 					// We've matched everything up until '@'
 					// Data after '@' is often address, we don't know that at compile time
 					else if unsafe { *((curr + mcount as u64) as *const u8) } == b'@' {
-						innode = true;
-						matchcount += mcount + 1;
+						// We only skip on entries using '@' because those are
+						// the only ones where we might have duplicates
+						if skip == 0 {
+							innode = true;
+							matchcount += mcount + 1;
+							if matchcount >= name.len() {
+								nodefinished = true;
+							}
+						} else {
+							skip -= 1;
+							innode = false;
+						}
 					}
 					else {
 						innode = false;
@@ -101,7 +114,7 @@ fn _find_prop(header: u64, _name: &str, result: &mut FdtProp) -> i32	{
 				curr += math::align_pow2_up!( nodelen as u64 + 1, 4);
 			}
 			FDT_END_NODE => {
-				//log::info("FDT end node\n");
+// 				log::info("FDT end node");
 				innode = false;
 				if nodefinished {
 					return 0;
@@ -111,7 +124,7 @@ fn _find_prop(header: u64, _name: &str, result: &mut FdtProp) -> i32	{
 				let proplen = memory::be::read::u32(curr);
 				let stroffset = memory::be::read::u32(curr + 4);
 				let propname = (strdata + stroffset as u64) as *const u8;
-				//log::from_memory(propname as u64);
+// 				log::from_memory(propname as u64);
 				if innode {
 					let propnamelen = memory::cstring::strlen(propname);
 					if memory::cstring::bytesequals(propname, name, matchcount as usize) == propnamelen {
@@ -137,20 +150,22 @@ fn _find_prop(header: u64, _name: &str, result: &mut FdtProp) -> i32	{
 						if memory::cstring::strequals(propname, "#address-cells") == addrsize {
 							result.size_cells = memory::be::read::u32(curr + 8);
 						}
+					} else if memory::cstring::strequals(propname, "status") == "status".len() {
+						result.status = curr + 8;
 					}
 				}
 				// Length specifier + str offset + property data
 				curr += 4 as u64 + 4 as u64 + math::align_pow2_up!(proplen, 4) as u64;
 			}
 			FDT_END => {
-				//log::info("Found end of FDT structs\n");
+// 				log::info("Found end of FDT structs");
 			}
 			FDT_NOP => {
 				// This does nothing and have no data
-				//log::info("Found end of FDT NOP\n");
+// 				log::info("Found end of FDT NOP");
 			}
 			_ => {
-				log::info("Unknown FDT node");
+// 				log::info("Unknown FDT node");
 			}
 		}
 	}
@@ -158,12 +173,12 @@ fn _find_prop(header: u64, _name: &str, result: &mut FdtProp) -> i32	{
 	return -1;
 }
 
-pub fn find_prop(name: &str, result: &mut FdtProp) -> i32 {
-	return unsafe { _find_prop(FDT, name, result) };
+pub fn find_prop(name: &str, result: &mut FdtProp, skip: i32) -> i32 {
+	return unsafe { _find_prop(FDT, name, result, skip) };
 }
 pub fn get_compatible() {
 	let mut prop = FdtProp::default();
-	find_prop("/compatible", &mut prop);
+	find_prop("/compatible", &mut prop, 0);
 }
 fn interpret_as_reg(prop: &FdtProp) -> (u64, u64) {
 	// Sanity check for bugs in our code or bad data from FDT
@@ -188,6 +203,19 @@ fn interpret_as_reg(prop: &FdtProp) -> (u64, u64) {
 	}
 	return (addr, size);
 }
+pub fn get_as_reg(name: &str, skip: i32) -> (u64, u64) {
+	let mut prop = FdtProp::default();
+	if find_prop(name, &mut prop, skip) == 0 {
+		if prop.status != 0 {
+			let statname = prop.status as *const u8;
+			if memory::cstring::strequals(statname, "disabled") == "disabled".len() {
+				return get_as_reg(name, skip+1);
+			}
+		}
+		return interpret_as_reg(&prop);
+	}
+	return (u64::MAX, u64::MAX);
+}
 
 /*
 /secram@e000000
@@ -198,7 +226,7 @@ fn interpret_as_reg(prop: &FdtProp) -> (u64, u64) {
 */
 pub fn get_secure_memory() -> (u64, u64) {
 	let mut prop = FdtProp::default();
-	if find_prop("/secram/reg", &mut prop) == 0 {
+	if find_prop("/secram/reg", &mut prop, 0) == 0 {
 		return interpret_as_reg(&prop);
 	}
 	return (u64::MAX, u64::MAX);

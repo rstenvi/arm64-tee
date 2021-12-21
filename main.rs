@@ -19,7 +19,7 @@ mod applets;
 mod syscall;
 
 use lib::log;
-use platform::Platform;
+// use platform::Platform;
 use driver::mmu;
 use lib::math;
 use core::alloc::Layout;
@@ -47,6 +47,16 @@ pub extern "C" fn rustmain(fdt: u64, imgload: u64, imgend: u64) -> u64 {
 	// use it after the init-routines are done
 	let _fdtsize = driver::dtb::init(fdt);
 
+	// Get address of serial device
+	let (mut plstart, mut plsize) = driver::dtb::get_as_reg("/pl011/reg", 0);
+	if plstart == u64::MAX {
+		// Get the default one we've already been using
+		log::info("Unable to find address for serial device in DTB");
+		plstart = platform::uart::BASE0;
+		plsize = mmu::PAGE_SIZE;
+	}
+	driver::serial::set_base(plstart);
+
 	// Init physical memory manager
 	driver::pmm::init(imgload, imgend);
 
@@ -58,8 +68,9 @@ pub extern "C" fn rustmain(fdt: u64, imgload: u64, imgend: u64) -> u64 {
 	// PMM must adjust any dynamically allocated data
 	driver::pmm::lateinit(linear);
 
-	// The platform must set up DMA regions before we can interact with DMA devices again
-	platform::Impl::map_dma();
+	// Set up DMA for serial device
+	mmu::map_dma(plstart, plstart + plsize);
+// 	platform::Impl::map_dma();
 	log::info("Initialized virtual memory");
 
 	// Set up new stack unique to CPU core
