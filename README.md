@@ -21,9 +21,7 @@ Firmware-A](https://github.com/ARM-software/arm-trusted-firmware.git). The
 firmware can be compiled with:
 
 ~~~
-$ make CROSS_COMPILE=aarch64-linux-gnu- PLAT=qemu SPD=opteed DEBUG=1 \
-ARM_LINUX_KERNEL_AS_BL33=1 BL32=/path/to/bl32.img BL33=/path/to/some/kernel \
-all fip
+$ make CROSS_COMPILE=aarch64-linux-gnu- PLAT=qemu SPD=opteed DEBUG=1 ARM_LINUX_KERNEL_AS_BL33=1 BL32=/path/to/bl32.img BL33=/path/to/some/kernel all fip
 $ dd if=build/qemu/debug/bl1.bin of=flash.bin bs=4096 conv=notrunc
 $ dd if=build/qemu/debug/fip.bin of=flash.bin seek=64 bs=4096 conv=notrunc
 ~~~
@@ -38,3 +36,15 @@ $ qemu-system-aarch64 -nographic -machine virt,secure=on -cpu max -smp 1 -m 1024
 
 [minimalos/](minimalos/) can be used as a test OS to check if the SMC interfaces
 are working.
+
+# Features
+
+- Serial interface to print data
+- OP-TEE interface to receive control from normal world
+- Drop to S-EL0 on SMC
+- Virtual memory set up via MMU
+  - EL1-0 share `.text`
+  - EL1-0 share `.rodata`
+- Dynamic memory set up for EL0
+  - Configured as global default allocator so that `collections` can be used
+- SVC interface from EL0 to EL1
