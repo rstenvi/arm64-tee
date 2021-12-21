@@ -216,7 +216,7 @@ pub extern "C" fn smc_handler(args: &mut [u64; 8])	{
 			//optee::smc_handler(func, args);
 			applets::smc_handler(func, args);
 		}
-		0x2a => {
+		0x3d => {
 			applets::smc_handler(func, args);
 		}
 		_ => {

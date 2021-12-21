@@ -48,18 +48,20 @@ macro_rules! exec_in_el0 {
 	($app:expr, $fnid:expr, $cmd:expr, $arg:expr) => {
 		let mut state = interrupt::InterruptState::default();
 		state.elr = adjust_func_add!($app.smc as u64);
-		state.regs[0] = $fnid;
-		state.regs[1] = $cmd;
-		state.regs[2] = $arg;
+		state.regs[0] = $app.data;
+		state.regs[1] = $fnid;
+		state.regs[2] = $cmd;
+		state.regs[3] = $arg;
 		__exec_in_el0($app, &mut state);
 	};
 	($app:expr, $fnid:expr, $cmd:expr, $arg:expr, $len:expr) => {
 		let mut state = interrupt::InterruptState::default();
 		state.elr = adjust_func_add!($app.smc as u64);
-		state.regs[0] = $fnid;
-		state.regs[1] = $cmd;
-		state.regs[2] = $arg;
-		state.regs[2] = $len;
+		state.regs[0] = $app.data;
+		state.regs[1] = $fnid;
+		state.regs[2] = $cmd;
+		state.regs[3] = $arg;
+		state.regs[4] = $len;
 		__exec_in_el0($app, &mut state);
 	};
 }
@@ -80,7 +82,7 @@ macro_rules! exec_in_el0 {
 
 pub(crate) use svc;
 
-type AppletSmc  = fn(u64, u64, u64, u64);
+type AppletSmc  = fn(u64, u64, u64, u64, u64);
 type AppletInit = fn();
 
 /**
@@ -106,6 +108,7 @@ pub struct Applet {
 	stack: u64,
 	init: AppletInit,
 	smc:  AppletSmc,
+	data: u64,
 	ready: bool,
 }
 
@@ -113,7 +116,7 @@ pub struct Applet {
 * Declare all registered applets
 */
 static mut APPLETS: [Applet; 1] = [
-	Applet{smc: storage::smc, init: storage::init, stack: u64::MAX, ttbr: u64::MAX, ready: false}
+	Applet{smc: storage::smc, init: storage::init, stack: u64::MAX, ttbr: u64::MAX, data: 0, ready: false}
 ];
 
 // Empty function if applet doesn't need any initialization
@@ -169,6 +172,24 @@ pub fn smc_handler(func: u64, args: &mut [u64; 8]) {
 	} else {
 		args[1] = ret as u64;
 	}
+}
+
+pub fn store_ptr(addr: u64) -> u64 {
+	let len = unsafe { APPLETS.len() };
+	let mut fix = usize::MAX;
+	for i in 0..len {
+		let app = unsafe { &mut APPLETS[i] };
+		if ! app.ready {
+			break;
+		}
+		fix = i;
+	}
+	if fix != usize::MAX {
+		let app = unsafe { &mut APPLETS[fix] };
+		app.data = addr;
+		return 0;
+	}
+	return u64::MAX;
 }
 
 pub fn init() -> u32 {

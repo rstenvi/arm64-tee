@@ -32,5 +32,10 @@ SECTIONS {
 		DATA_STOP = .;
 	}
 	IMAGE_END = .;
+/*	USERDATA_START = .;
+	.userdata : ALIGN(ARM64_PAGE_SIZE) {
+		*(.userdata.*);
+	}
+	USERDATA_END = .;*/
 }
 
